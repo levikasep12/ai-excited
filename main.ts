@@ -1,5 +1,5 @@
-// Copies entry.png to the configured output directory and reports its byte count.
-// Parses the copied JPEG's SOF marker and reports its dimensions.
+// Copies entry.png to the configured output directory and reports bytes written.
+// Reads JPEG SOF dimensions and requires the output to be exactly 1024x1024.
 import { access, copyFile, mkdir, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 
@@ -23,7 +23,8 @@ function readJpegDimensions(data: Buffer): { width: number; height: number } {
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
     if (offset + 1 >= data.length) break;
     const segmentLength = data.readUInt16BE(offset);
-    if ((marker === 0xc0 || marker === 0xc2) && segmentLength >= 7 && offset + segmentLength <= data.length) {
+    if (segmentLength < 2 || offset + segmentLength > data.length) break;
+    if ((marker === 0xc0 || marker === 0xc2) && segmentLength >= 7) {
       return { height: data.readUInt16BE(offset + 3), width: data.readUInt16BE(offset + 5) };
     }
     offset += segmentLength;
@@ -44,6 +45,9 @@ try {
   const dimensions = readJpegDimensions(await readFile(destination));
   console.log(`Wrote ${written.size} bytes to ${destination}`);
   console.log(`Output dimensions: ${dimensions.width}x${dimensions.height}`);
+  if (dimensions.width !== 1024 || dimensions.height !== 1024) {
+    throw new Error(`expected output dimensions 1024x1024, got ${dimensions.width}x${dimensions.height}`);
+  }
 } catch (error) {
   console.error(`Failed to copy entry.png: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
